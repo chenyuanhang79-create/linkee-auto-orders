@@ -11,7 +11,6 @@ import openpyxl
 
 app = Flask(__name__)
 
-# 客户名称映射表
 CUSTOMER_MAP = {
     "Lin Kee (Artane)": "五区",
     "Lin Kee (North Strand)": "三区",
@@ -20,7 +19,6 @@ CUSTOMER_MAP = {
     "Lin Kee (Cabra)": "七区"
 }
 
-# 首页界面
 @app.route("/")
 def index():
     return render_template_string("""
@@ -40,13 +38,11 @@ def index():
 </head>
 <body>
   <h2>林记 · 订单助手</h2>
-  <p>输入账号密码，一键获取订单（支持导出 Excel）</p>
   <input id="u" placeholder="用户名"><br>
   <input id="p" type="password" placeholder="密码"><br>
   <button onclick="fetchOrders()">获取订单</button>
   <button onclick="downloadExcel()">下载 Excel</button>
   <div id="res"></div>
-
 <script>
 async function fetchOrders(){
   const u = document.getElementById('u').value;
@@ -62,25 +58,18 @@ async function fetchOrders(){
     document.getElementById('res').innerHTML = '❌ 错误: ' + d.msg;
     return;
   }
-
-  // 显示汇总
   let html = '<div class="card"><h3>订单汇总</h3><ul>';
   for(const [store, count] of Object.entries(d.summary)){
     html += '<li>' + store + ': ' + count + ' 单</li>';
   }
   html += '</ul></div>';
-
-  // 显示明细
   html += '<div class="card"><h3>订单明细</h3><ul>';
   for(const row of d.orders){
     html += '<li>客户: ' + row.Customer + ' | 订购日期: ' + row["Order Date"] + '</li>';
   }
   html += '</ul></div>';
-
   document.getElementById('res').innerHTML = html;
 }
-
-// 下载 Excel
 function downloadExcel(){
   const u = document.getElementById('u').value;
   const p = document.getElementById('p').value;
@@ -89,9 +78,8 @@ function downloadExcel(){
 </script>
 </body>
 </html>
-    """)
+""")
 
-# 抓取订单逻辑
 def scrape_orders(username, password):
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -102,28 +90,36 @@ def scrape_orders(username, password):
     rows = []
     try:
         driver.get("https://www.supplier.orderit.ie/#/login")
-        wait = WebDriverWait(driver, 20)
+        wait = WebDriverWait(driver, 30)
 
         # 输入用户名
-        username_input = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[placeholder='Username']")))
-        username_input.click()
+        username_input = wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "input[placeholder='Username']"))
+        )
+        username_input.clear()
         username_input.send_keys(username)
 
         # 输入密码
-        password_input = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "input[placeholder='Password']")))
-        password_input.click()
+        password_input = wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "input[placeholder='Password']"))
+        )
+        password_input.clear()
         password_input.send_keys(password)
 
         # 点击登录
         login_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button")))
         login_button.click()
-        time.sleep(5)
 
-        # 打开订单页面
+        # 等待 Orders 菜单出现
+        wait.until(EC.presence_of_element_located((By.LINK_TEXT, "Orders")))
+
+        # 进入 Orders 页面
         driver.get("https://www.supplier.orderit.ie/#/orders")
-        time.sleep(5)
 
-        # 提取订单表格
+        # 等待表格加载
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table tbody tr")))
+
+        # 抓取表格
         table_rows = driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
         for row in table_rows:
             cols = [col.text.strip() for col in row.find_elements(By.TAG_NAME, "td")]
@@ -138,7 +134,6 @@ def scrape_orders(username, password):
 
     return rows
 
-# 后端接口：获取 JSON
 @app.route("/grab_orders", methods=["POST"])
 def grab_orders():
     username = request.json.get("username")
@@ -150,7 +145,6 @@ def grab_orders():
     except Exception as e:
         return jsonify({"status": "error", "msg": str(e)})
 
-# 后端接口：导出 Excel
 @app.route("/export_excel")
 def export_excel():
     username = request.args.get("username")
@@ -158,17 +152,16 @@ def export_excel():
     try:
         rows = scrape_orders(username, password)
         summary = dict(Counter([row["Customer"] for row in rows]))
-
         wb = openpyxl.Workbook()
 
-        # 工作表 1：订单明细
+        # Sheet1: Orders
         ws1 = wb.active
         ws1.title = "Orders"
         ws1.append(["Customer", "Order Date"])
         for row in rows:
             ws1.append([row["Customer"], row["Order Date"]])
 
-        # 工作表 2：汇总统计
+        # Sheet2: Summary
         ws2 = wb.create_sheet(title="Summary")
         ws2.append(["Customer", "订单数量"])
         for customer, count in summary.items():
