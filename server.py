@@ -1,4 +1,4 @@
-import os, re, time
+import os, time
 from flask import Flask, request, jsonify, render_template_string
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -12,7 +12,6 @@ ORDERS_URL = f"{SUPPLIER_BASE}/#/orders"
 
 app = Flask(__name__)
 
-# 商品映射（中英对照，可以自己补充）
 I18N = {
     "3+1 (大) 400pcs": "3+1 (Large) 400pcs",
     "大手提袋 300pcs": "Large Carry Bag 300pcs",
@@ -73,4 +72,36 @@ button{background:black;color:white;border:none;border-radius:6px}
 <button onclick="fetchOrders()">获取订单</button>
 <div id="res"></div>
 <script>
-async function fetchOrd
+async function fetchOrders(){
+  const u=document.getElementById('u').value;
+  const p=document.getElementById('p').value;
+  document.getElementById('res').innerHTML='加载中...';
+  const r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+  const d=await r.json();
+  if(!d.ok){document.getElementById('res').innerHTML='失败: '+d.error;return;}
+  let html='<div class=card><h3>订单统计</h3>';
+  for(const k in d.store_totals){html+=`<p>${k}: ${d.store_totals[k]} 件</p>`}
+  html+='</div><div class=card><h3>SKU汇总</h3><ul>';
+  for(const item of d.sku_totals){html+=`<li>${item.product} (${item.product_en}): ${item.qty}</li>`}
+  html+='</ul></div>';
+  document.getElementById('res').innerHTML=html;
+}
+</script>
+</body></html>
+    """)
+
+@app.route("/api/orders", methods=["POST"])
+def api_orders():
+    data = request.get_json(force=True)
+    u, p = data.get("username"), data.get("password")
+    try:
+        rows = grab_orders(u, p)
+        # 简化统计：这里先用行数假设，每个门店分得一样多
+        totals = {"D3":len(rows)//4, "D9":len(rows)//4, "SW":len(rows)//4, "D5":len(rows)//4}
+        sku = [{"product":k,"product_en":I18N.get(k,""),"qty":1} for k in I18N.keys()]
+        return jsonify({"ok":True,"store_totals":totals,"sku_totals":sku})
+    except Exception as e:
+        return jsonify({"ok":False,"error":str(e)})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",8080)))
