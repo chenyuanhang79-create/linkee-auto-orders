@@ -41,8 +41,8 @@ def grab_orders(username, password):
     try:
         driver.get(LOGIN_URL)
         time.sleep(2)
-        driver.find_element(By.NAME, "username").send_keys(username)
-        driver.find_element(By.NAME, "password").send_keys(password)
+        driver.find_element(By.CSS_SELECTOR, "input[placeholder='Username']").send_keys(username)
+        driver.find_element(By.CSS_SELECTOR, "input[placeholder='Password']").send_keys(password)
         driver.find_element(By.NAME, "password").send_keys(Keys.RETURN)
         time.sleep(5)
         driver.get(ORDERS_URL)
